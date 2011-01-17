@@ -3,6 +3,15 @@
 include 'OAuth.php';
 include 'CURL.php';
 
+
+/**
+	Contains a latitude and longitude. Simply represents a coordinate
+**/
+class GeoPoint {
+	public $lat;
+	public $lng;
+}
+
 /**
 	A record object contains data regarding an arbitrary object and the
 	layer it resides in
