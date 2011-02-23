@@ -97,7 +97,7 @@ class SimpleGeo extends CURL {
 	}
 	
 	
-	/**
+/**
 		Extracts the ID from a SimpleGeo ID (SG_XXXXXXXXXXXXXXXXXXXXXX)
 		
 		@param	string	id	The SimpleGeo ID of a feaure
@@ -105,7 +105,7 @@ class SimpleGeo extends CURL {
 	**/
 	public static function ExtractID($id) {
 		preg_match('~SG_[A-Za-z0-9]{22}~', $id, $matches);
-		return isset($matches[0]) ? $matches[0] : NULL;
+		return isset($matches[0]) ? $matches[0] : false;
 	}
 	
 	/**
@@ -113,7 +113,7 @@ class SimpleGeo extends CURL {
 		
 	**/
 	public function FeatureCategories() {
-		return $this->SendRequest('GET', '1.0/features/categories');
+		return $this->SendRequest('GET', '1.0/features/categories.json');
 	}
 	
 	/**
@@ -123,7 +123,7 @@ class SimpleGeo extends CURL {
 	**/
 		
 	public function Feature($handle) {
-		return $this->SendRequest('GET', '1.0/features/' . $handle);
+		return $this->SendRequest('GET', '1.0/features/' . $handle . '.json');
 	}
 	
 	/**
@@ -134,7 +134,7 @@ class SimpleGeo extends CURL {
 	**/
 	
 	public function ContextIP($ip, $opts = false) {
-		return $this->SendRequest('GET', '1.0/context/' . $ip, $opts);
+		return $this->SendRequest('GET', '1.0/context/' . $ip . '.json', $opts);
 	}
 	
 	
@@ -152,7 +152,7 @@ class SimpleGeo extends CURL {
 			$lat = $lat->lat;
 			if (is_array($lng)) $opts = $lng;
 		}
-		return $this->SendRequest('GET', '1.0/context/' . $lat . ',' . $lng);
+		return $this->SendRequest('GET', '1.0/context/' . $lat . ',' . $lng . '.json');
 	}
 	
 	
@@ -164,7 +164,7 @@ class SimpleGeo extends CURL {
 
 	**/
 	public function ContextAddress($address, $opts = false) {
-		return $this->SendRequest('GET', '1.0/context/' . $address);
+		return $this->SendRequest('GET', '1.0/context/address.json', array('address' => $address));
 	}
 	
 	
@@ -181,7 +181,7 @@ class SimpleGeo extends CURL {
 	**/
 	
 	public function PlacesIP($ip, $opts = false) {
-		return $this->SendRequest('GET', '1.0/places/' . $ip, $opts);
+		return $this->SendRequest('GET', '1.0/places/' . $ip, $opts . '.json');
 	}
 	
 	
@@ -204,7 +204,7 @@ class SimpleGeo extends CURL {
 			$lng = $lat->lng;
 			$lat = $lat->lat;
 		}
-		return $this->SendRequest('GET', '1.0/places/' . $lat . ',' . $lng, $opts);
+		return $this->SendRequest('GET', '1.0/places/' . $lat . ',' . $lng . '.json', $opts);
 	}
 	
 	
@@ -219,9 +219,53 @@ class SimpleGeo extends CURL {
 		@param float radius		Radius in km (default=25)
 
 	**/
-	public function PlacesAddress($address, $opts = false) {
-		return $this->SendRequest('GET', '1.0/places/' . $address, $opts);
+	public function PlacesAddress($address, $opts = array()) {
+		return $this->SendRequest('GET', '1.0/places/address.json', array_merge(array(
+			'address' => $address
+		), $opts));
 	}
+	
+	
+	/**
+		Use the Places endpoint to contribute a new feature to SimpleGeo Places. Each new feature 
+		gets a unique, consistent handle; if you insert the same record twice, the more recent 
+		insert overwrites the previous one.
+		
+		When you add a feature, it is visible only to your application until approved for general 
+		use. To keep your features private to your application, include "private": true in the GeoJSON 
+		properties.
+	
+		@var Feature $place	A place object to insert
+		
+	**/
+	public function CreatePlace(Place $place) {
+		$context = $this->ContextCoord($place->Latitude, $place->Longitude);
+		return $this->SendRequest('POST', '1.0/places', json_encode($place->ToArray()));
+	}
+	
+	
+	/**
+		Update a place
+	
+		@var Feature $place	A place object to modify
+		
+	**/
+	public function UpdatePlace(Place $place) {
+		return $this->SendRequest('POST', '1.0/features/' . $place->ID . '.json', json_encode($place->ToArray()));
+	}
+	
+	
+	/**
+		Suggests that a Feature be deleted and effectively hides it from your view. Requires a handle.
+		Returns a status token.
+		
+		@var Feature $place	The place to delete
+	
+	**/
+	public function DeletePlace(Place $place) {
+		return $this->SendRequest('DELETE', '1.0/features/' . $place->ID . '.json');
+	}
+	
 	
 	/**
 		Returns density information of a coordinate
@@ -233,8 +277,10 @@ class SimpleGeo extends CURL {
 		@param	int		$hour		Hour of the day
 		
 	**/
-	public function SpotRankDensity($lat, $lon, $dayname, $hour = NULL) {
-		return $this->SendRequest('GET', '0.1/density/' . $dayname . '/' . ($hour ? ($hour . '/') : '') . $lat . ',' . $lon);
+	public function SpotRankDensity($dayname, $lat, $lon, $hour = false) {
+		$params = array();
+		if ($hour !== false) $params['hour'] = $hour;
+		return $this->SendRequest('GET', '1.0/density/' . $dayname . '/' . $hour . '/' . $lat . ',' . $lon . '.json', $params);
 	}
 	
 	
@@ -246,26 +292,7 @@ class SimpleGeo extends CURL {
 		
 	**/
 	public function PutRecord(Record $record) {
-		$this->SendRequest('PUT', '0.1/records/' . $record->Layer . '/' . $record->ID, json_encode($record->ToArray()));
-		return intval($this->Status / 100) == 2; // Return whether or not http response code is 2xx
-	}
-	
-	
-	/**
-		Inserts several record objects simultaneously
-		
-		@var	string	$layer		The layer to add the records to
-		@var	array	$records	An array containing several record objects
-		
-	**/
-	public function PutRecords($layer, $records) {
-		$list = array();
-		for ($i = 0, $_i = count($records); $i < $_i; $i++) array_push($list, $records[$i]->ToArray());
-		$this->SendRequest('PUT', '0.1/records/' . $layer, json_encode(array(
-			'type' => 'FeatureCollection',
-			'features' => $list
-		)));
-		return intval($this->Status / 100) == 2; // Return whether or not http response code is 2xx
+		return $this->SendRequest('PUT', '0.1/records/' . $record->Layer . '/' . $record->ID . '.json', json_encode($record->ToArray()));
 	}
 	
 	
@@ -273,35 +300,22 @@ class SimpleGeo extends CURL {
 	/**
 		Gets a record according to the ID and Layer properties of the record
 		
-		@var	mixed	$record	Either a record object or a layer name
-		
-		@param	string	$id		The ID of the record to delete
+		@var	Record	$record	The record to retrieve
 		
 	**/
-	public function GetRecord($layer, $id = false) {
-		if ($layer instanceof Record) {
-			$id = $layer->ID;
-			$layer = $layer->Layer;
-		}
-		return $this->SendRequest('GET', '0.1/records/' . $layer . '/' . $id);
+	public function GetRecord(Record $record) {
+		return $this->SendRequest('GET', '0.1/records/' . $record->Layer . '/' . $record->ID . '.json');
 	}
 	
 	
 	/**
 		Delete a record according to the ID and Layer properties of the record
 		
-		@var	mixed	$record	Either a record object or a layer name
-		
-		@param	string	$id		The ID of the record to delete
+		@var	Record	$record	The record to delete
 		
 	**/
-	public function DeleteRecord($layer, $id = false) {
-		if ($layer instanceof Record) {
-			$id = $layer->ID;
-			$layer = $layer->Layer;
-		}
-		$this->SendRequest('DELETE', '0.1/records/' . $layer . '/' . $id);
-		return intval($this->Status / 100) == 2; // Return whether or not http response code is 2xx
+	public function DeleteRecord(Record $record) {
+		return $this->SendRequest('DELETE', '0.1/records/' . $record->Layer . '/' . $record->ID . '.json');
 	}
 	
 	
@@ -309,17 +323,10 @@ class SimpleGeo extends CURL {
 	/**
 		Retrieve the history of an individual record
 		
-		@var	mixed	$record	Either a record object or a layer name
-		
-		@param	string	$id		The ID of the record to delete
-		
+		@var	Record	$record	The record to retrieve the history of
 	**/
-	public function RecordHistory($layer, $id = false) {
-		if ($layer instanceof Record) {
-			$id = $layer->ID;
-			$layer = $layer->Layer;
-		}
-		return $this->SendRequest('GET', '0.1/records/' . $layer . '/' . $id . '/history');
+	public function RecordHistory(Record $record) {
+		return $this->SendRequest('GET', '0.1/records/' . $record->Layer . '/' . $record->ID . '/history.json');
 	}
 	
 	
@@ -334,8 +341,8 @@ class SimpleGeo extends CURL {
 		@params	array	$params	Additional parameters in an associate array (radius, limit, types, start, end)
 		
 	**/
-	public function RecordsCoord($layer, $lat, $lng, $params = array()) {
-		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $lat . ',' . $lng, $params);
+	public function NearbyRecordsCoord($layer, $lat, $lng, $params = array()) {
+		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $lat . ',' . $lng . '.json', $params);
 	}
 	
 	
@@ -349,8 +356,8 @@ class SimpleGeo extends CURL {
 		@params	array	$params	Additional parameters in an associate array (radius, limit, types, start, end)
 		
 	**/
-	public function RecordsGeohash($layer, $hash, $params = array()) {
-		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $hash, $params);
+	public function NearbyRecordsGeohash($layer, $hash, $params = array()) {
+		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $hash . '.json', $params);
 	}
 	
 	
@@ -364,9 +371,10 @@ class SimpleGeo extends CURL {
 		@params	array	$params	Additional parameters in an associate array (radius, limit, types, start, end)
 		
 	**/
-	public function RecordsIP($layer, $ip, $params = array()) {
-		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $ip, $params);
+	public function NearbyRecordsIP($layer, $ip, $params = array()) {
+		return $this->SendRequest('GET', '0.1/records/' . $layer . '/nearby/' . $ip . '.json', $params);
 	}
+
 	
 	
 	/**
